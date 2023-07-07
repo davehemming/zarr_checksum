@@ -1,7 +1,10 @@
+import boto3
 from pathlib import Path
 import tempfile
+import os
+from moto import mock_s3
 
-from zarr_checksum.generators import ZarrArchiveFile, yield_files_local
+from zarr_checksum.generators import ZarrArchiveFile, yield_files_local, yield_files_s3
 
 
 def test_yield_files_local(tmp_path):
@@ -36,6 +39,21 @@ def test_yield_files_local(tmp_path):
     )
 
 
+def test_yield_files_local_exclude_file(tmp_path):
+    sub_dir = tempfile.mkdtemp(dir=tmp_path)
+
+    with open(f"{sub_dir}/include_me.txt", "w", encoding="UTF-8") as fp:
+        pass
+
+    with open(f"{sub_dir}/exclude_me.txt", "w", encoding="UTF-8") as fp:
+        pass
+
+    files = list(yield_files_local(tmp_path, excluded_files=["exclude_me.txt"]))
+
+    assert len(files) == 1
+    assert os.path.basename(files[0].path) == "include_me.txt"
+
+
 def test_yield_files_local_no_empty_dirs(tmp_path):
     """Ensure no empty directories are yielded."""
     # Create a nested file
@@ -54,3 +72,52 @@ def test_yield_files_local_no_empty_dirs(tmp_path):
 
 
 # TODO: Add tests for yield_files_s3
+@mock_s3
+def test_yield_files_s3():
+    conn = boto3.resource("s3", region_name="us-east-1")
+    conn.create_bucket(Bucket="mybucket")
+
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.put_object(Bucket="mybucket", Key="root/c", Body="c file")
+    s3.put_object(Bucket="mybucket", Key="root/a/b", Body="b file")
+
+    files = list(yield_files_s3("mybucket", "root"))
+
+    assert (
+        ZarrArchiveFile(
+            path=Path("root/a/b").relative_to("root"),
+            size=6,
+            digest="2922c85ff581cb436b3082bb16a072e2",
+        )
+        in files
+    )
+    assert (
+        ZarrArchiveFile(
+            path=Path("root/c").relative_to("root"),
+            size=6,
+            digest="a760f80cbf448dfd87da899a89c93011",
+        )
+        in files
+    )
+
+
+@mock_s3
+def test_yield_files_s3_exclude_file():
+    conn = boto3.resource("s3", region_name="us-east-1")
+    conn.create_bucket(Bucket="mybucket")
+
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.put_object(Bucket="mybucket", Key="root/a/include_me.txt", Body="Include me")
+    s3.put_object(Bucket="mybucket", Key="root/a/exclude_me.txt", Body="Exclude me")
+
+    files = list(yield_files_s3("mybucket", "root", None, ["exclude_me.txt"]))
+
+    assert len(files) == 1
+    assert (
+        ZarrArchiveFile(
+            path=Path("root/a/include_me.txt").relative_to("root"),
+            size=10,
+            digest="3fd64aa3921fb8a6e3d59479cc3dd62e",
+        )
+        in files
+    )
