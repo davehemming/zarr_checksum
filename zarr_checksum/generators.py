@@ -49,7 +49,9 @@ def yield_files_s3(
     bucket: str,
     prefix: str = "",
     client_options: S3ClientOptions | None = None,
+    *,
     excluded_files: list[str] = [],
+    ignore_hidden=False,
 ) -> FileGenerator:
     if client_options is None:
         client_options = S3ClientOptions()
@@ -58,6 +60,11 @@ def yield_files_s3(
     client = boto3.client("s3", **asdict(client_options))
     continuation_token = None
     options = {"Bucket": bucket, "Prefix": prefix}
+
+    if excluded_files:
+        print(f"Excluding files: {excluded_files}")
+    if ignore_hidden:
+        print("Ignoring hidden files")
 
     print("Retrieving files...")
 
@@ -77,24 +84,17 @@ def yield_files_s3(
         # Fetch
         res = client.list_objects_v2(**options)
 
-        s3_objects_ni_excluded = [
-            obj
-            for obj in res.get("Contents", [])
-            if os.path.basename(Path(obj["Key"])) not in excluded_files
-        ]
-
-        # Fix keys of listing to be relative to zarr root
-        mapped = (
-            ZarrArchiveFile(
+        for obj in res.get("Contents", []):
+            filename = os.path.basename(Path(obj["Key"]))
+            if filename in excluded_files:
+                continue
+            if ignore_hidden and filename.startswith("."):
+                continue
+            yield ZarrArchiveFile(
                 path=Path(obj["Key"]).relative_to(prefix),
                 size=obj["Size"],
                 digest=obj["ETag"].strip('"'),
             )
-            for obj in s3_objects_ni_excluded
-        )
-
-        # Yield as flat iteratble
-        yield from mapped
 
         # If all files fetched, end
         continuation_token = res.get("NextContinuationToken", None)
@@ -102,17 +102,27 @@ def yield_files_s3(
             break
 
 
-def yield_files_local(directory: str | Path, excluded_files: list[str] = []) -> FileGenerator:
+def yield_files_local(
+    directory: str | Path, *, excluded_files: list[str] = [], ignore_hidden: bool = False
+) -> FileGenerator:
     root_path = Path(os.path.expandvars(directory)).expanduser()
     if not root_path.exists():
         raise Exception("Path does not exist")
+
+    if excluded_files:
+        print(f"Excluding files: {excluded_files}")
+    if ignore_hidden:
+        print("Ignoring hidden files")
 
     print("Discovering files...")
     store = NestedDirectoryStore(root_path)
     for file in tqdm(list(store.keys())):
         path = Path(file)
         filename = os.path.basename(path)
+
         if filename in excluded_files:
+            continue
+        if ignore_hidden and filename.startswith("."):
             continue
 
         absolute_path = root_path / path

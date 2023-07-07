@@ -54,6 +54,21 @@ def test_yield_files_local_exclude_file(tmp_path):
     assert os.path.basename(files[0].path) == "include_me.txt"
 
 
+def test_yield_files_local_exclude_hidden_files(tmp_path):
+    sub_dir = tempfile.mkdtemp(dir=tmp_path)
+
+    with open(f"{sub_dir}/.hidden", "w", encoding="UTF-8") as fp:
+        pass
+
+    with open(f"{sub_dir}/not_hidden.txt", "w", encoding="UTF-8") as fp:
+        pass
+
+    files = list(yield_files_local(tmp_path, ignore_hidden=True))
+
+    assert len(files) == 1
+    assert os.path.basename(files[0].path) == "not_hidden.txt"
+
+
 def test_yield_files_local_no_empty_dirs(tmp_path):
     """Ensure no empty directories are yielded."""
     # Create a nested file
@@ -110,7 +125,7 @@ def test_yield_files_s3_exclude_file():
     s3.put_object(Bucket="mybucket", Key="root/a/include_me.txt", Body="Include me")
     s3.put_object(Bucket="mybucket", Key="root/a/exclude_me.txt", Body="Exclude me")
 
-    files = list(yield_files_s3("mybucket", "root", None, ["exclude_me.txt"]))
+    files = list(yield_files_s3("mybucket", "root", excluded_files=["exclude_me.txt"]))
 
     assert len(files) == 1
     assert (
@@ -118,6 +133,28 @@ def test_yield_files_s3_exclude_file():
             path=Path("root/a/include_me.txt").relative_to("root"),
             size=10,
             digest="3fd64aa3921fb8a6e3d59479cc3dd62e",
+        )
+        in files
+    )
+
+
+@mock_s3
+def test_yield_files_s3_exclude_hidden_files():
+    conn = boto3.resource("s3", region_name="us-east-1")
+    conn.create_bucket(Bucket="mybucket")
+
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.put_object(Bucket="mybucket", Key="root/a/.hidden", Body="Hidden file")
+    s3.put_object(Bucket="mybucket", Key="root/a/not_hidden.txt", Body="Not hidden file")
+
+    files = list(yield_files_s3("mybucket", "root", ignore_hidden=True))
+
+    assert len(files) == 1
+    assert (
+        ZarrArchiveFile(
+            path=Path("root/a/not_hidden.txt").relative_to("root"),
+            size=15,
+            digest="8a15af589829a54b791084e3ada8f5b7",
         )
         in files
     )
