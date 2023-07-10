@@ -103,7 +103,11 @@ def yield_files_s3(
 
 
 def yield_files_local(
-    directory: str | Path, *, excluded_files: list[str] = [], ignore_hidden: bool = False
+    directory: str | Path,
+    *,
+    excluded_files: list[str] = [],
+    ignore_hidden: bool = False,
+    show_progress: bool = True,
 ) -> FileGenerator:
     root_path = Path(os.path.expandvars(directory)).expanduser()
     if not root_path.exists():
@@ -116,7 +120,8 @@ def yield_files_local(
 
     print("Discovering files...")
     store = NestedDirectoryStore(root_path)
-    for file in tqdm(list(store.keys())):
+    file_list = tqdm(list(store.keys())) if show_progress else list(store.keys())
+    for file in file_list:
         path = Path(file)
         filename = os.path.basename(path)
 
