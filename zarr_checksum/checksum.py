@@ -5,7 +5,7 @@ import hashlib
 import re
 from typing import List
 
-import pydantic
+from pydantic import BaseModel, Field
 
 ZARR_DIGEST_PATTERN = "([0-9a-f]{32})-([0-9]+)--([0-9]+)"
 
@@ -14,7 +14,7 @@ class InvalidZarrChecksum(Exception):
     pass
 
 
-class ZarrDirectoryDigest(pydantic.BaseModel):
+class ZarrDirectoryDigest(BaseModel):
     """The data that can be serialized to / deserialized from a checksum string."""
 
     md5: str
@@ -42,7 +42,7 @@ class ZarrDirectoryDigest(pydantic.BaseModel):
 
 
 @total_ordering
-class ZarrChecksum(pydantic.BaseModel):
+class ZarrChecksum(BaseModel):
     """
     A checksum for a single file/directory in a zarr file.
 
@@ -62,15 +62,15 @@ class ZarrChecksum(pydantic.BaseModel):
         return self.name < other.name
 
 
-class ZarrChecksumManifest(pydantic.BaseModel):
+class ZarrChecksumManifest(BaseModel):
     """
     A set of file and directory checksums.
 
     This is the data hashed to calculate the checksum of a directory.
     """
 
-    directories: List[ZarrChecksum] = pydantic.Field(default_factory=list)
-    files: List[ZarrChecksum] = pydantic.Field(default_factory=list)
+    directories: List[ZarrChecksum] = Field(default_factory=list)
+    files: List[ZarrChecksum] = Field(default_factory=list)
 
     @property
     def is_empty(self):
@@ -92,8 +92,8 @@ class ZarrChecksumManifest(pydantic.BaseModel):
             directory.size for directory in self.directories
         )
 
-        # Seralize json without any spacing
-        json = self.json(separators=(",", ":"))
+        # Seralize json
+        json = self.model_dump_json()
 
         # Generate digest
         md5 = hashlib.md5(json.encode("utf-8")).hexdigest()

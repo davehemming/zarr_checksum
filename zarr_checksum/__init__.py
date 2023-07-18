@@ -1,8 +1,12 @@
 from __future__ import annotations
+from dotenv import load_dotenv
+
+load_dotenv(None)
 
 from zarr_checksum.checksum import ZarrDirectoryDigest
 from zarr_checksum.generators import FileGenerator
 from zarr_checksum.tree import ZarrChecksumTree
+
 
 __all__ = [
     "compute_zarr_checksum",
